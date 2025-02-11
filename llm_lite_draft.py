@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
+# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT
 # ============ LLM Агент для обработки данных о товаре ============
-
+# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT
+# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT
+# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT# DRAFT
 import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")  # Убедитесь, что в системе задан OPENAI_API_KEY
 
