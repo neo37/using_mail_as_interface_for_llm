@@ -1,18 +1,21 @@
 import os
 import json
-import openai
 import openpyxl
-from dotenv import load_dotenv
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-# Загружаем переменные окружения из .env
+from dotenv import load_dotenv
+from openai import OpenAI
+
 load_dotenv()
 
-# Инициализируем OpenAI из переменной окружения
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class SupplierLLMAgent:
     """
-    Упрощённый LLM-агент для извлечения данных о товаре и генерации уточняющих вопросов.
+    LLM-агент для извлечения данных о товаре и генерации уточняющих вопросов.
+    Теперь работает с моделью "gpt-4o-mini".
     """
     def __init__(self, required_fields=None):
         if required_fields is None:
@@ -22,7 +25,8 @@ class SupplierLLMAgent:
 
     def parse_supplier_answer(self, supplier_text: str) -> dict:
         """
-        Отправляет текст в LLM, чтобы извлечь нужные поля в формате JSON.
+        Отправляет текст поставщика в OpenAI и возвращает JSON-структуру с нужными полями.
+        Если поля отсутствуют, оставляет пустые строки.
         """
         system_prompt = (
             "Ты — помощник, который анализирует ответ поставщика. "
@@ -33,39 +37,40 @@ class SupplierLLMAgent:
             f"Поля, которые нужны: {', '.join(self.required_fields)}.\n"
             f"Вот ответ поставщика:\n---\n{supplier_text}\n---\n"
             "Верни результат ТОЛЬКО в формате JSON. "
-            "Пример: {\"product_name\": \"...\", \"price\": \"...\", ... }"
+            "Пример: {{\"product_name\": \"...\", \"price\": \"...\", ...}}"
         )
 
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  #
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.0
             )
-            content = response["choices"][0]["message"]["content"]
+
+            content = response.choices[0].message.content
             data = json.loads(content)
         except Exception as e:
             print(f"Ошибка при парсинге ответа LLM: {e}")
             data = {}
 
-        # Убедимся, что у нас есть нужные поля (или пустые строки)
         clean_data = {}
         for field in self.required_fields:
             clean_data[field] = data.get(field, "")
         return clean_data
 
+
     def is_data_complete(self, data: dict) -> bool:
         """
-        Проверяем, все ли поля заполнены.
+        Проверяет, что все нужные поля заполнены.
         """
         return all(data.get(field) for field in self.required_fields)
 
     def generate_clarification_question(self, data: dict) -> str:
         """
-        Генерируем уточняющий вопрос, если какие-то поля не заполнены.
+        Если каких-то данных не хватает, генерирует уточняющий вопрос.
         """
         missing_fields = [f for f in self.required_fields if not data.get(f)]
         if not missing_fields:
@@ -83,15 +88,16 @@ class SupplierLLMAgent:
         )
 
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Используем ту же модель для генерации вопроса
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7
             )
-            question = response["choices"][0]["message"]["content"]
+            # Доступ к содержимому через атрибуты
+            question = response.choices[0].message.content
         except Exception as e:
             print(f"Ошибка при генерации уточняющего вопроса: {e}")
             question = "Пожалуйста, уточните недостающие данные."
@@ -124,10 +130,6 @@ class YandexEmailSender:
     """
     Отправка писем через SMTP (Яндекс).
     """
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
     def __init__(self):
         self.smtp_server = os.getenv("SMTP_SERVER", "smtp.yandex.ru")
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -135,9 +137,6 @@ class YandexEmailSender:
         self.sender_password = os.getenv("YANDEX_PASSWORD")
 
     def reply_to_sender(self, recipient_email: str, subject: str, body: str):
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-
         msg = MIMEMultipart()
         msg['From'] = self.sender_email
         msg['To'] = recipient_email
@@ -146,7 +145,7 @@ class YandexEmailSender:
 
         server = None
         try:
-            server = self.smtplib.SMTP(self.smtp_server, self.smtp_port)
+            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
             server.starttls()
             server.login(self.sender_email, self.sender_password)
             server.send_message(msg)
@@ -160,13 +159,11 @@ class YandexEmailSender:
 
 def save_supplier_data_to_excel(data: dict, filename="suppliers_data.xlsx"):
     """
-    data: {
-      "supplier_email_1": {"product_name": "...", ...},
-      ...
-    }
-    Сохраняем в Excel, один поставщик — одна строка.
+    Сохраняет данные вида:
+      { "supplier_email_1": {"product_name": "...", ...}, ... }
+    в Excel, где каждая строка — один поставщик.
     """
-    # Собираем все поля, которые присутствуют в данных
+    # Собираем все поля, присутствующие в данных
     all_fields = set()
     for d in data.values():
         all_fields.update(d.keys())
@@ -180,7 +177,6 @@ def save_supplier_data_to_excel(data: dict, filename="suppliers_data.xlsx"):
     ws = wb.active
     ws.title = "Suppliers"
 
-    # Заголовки
     headers = ["supplier_email"] + all_fields
     for col_index, field in enumerate(headers, start=1):
         ws.cell(row=1, column=col_index, value=field)
